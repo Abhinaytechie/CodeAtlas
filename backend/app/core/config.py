@@ -1,12 +1,12 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List, Union
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "DSA Platform API"
     API_V1_STR: str = "/api/v1"
     
     # CORS
-    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    BACKEND_CORS_ORIGINS: Union[List[str], str] = ["http://localhost:5173", "http://localhost:3000"]
     
     # Database
     MONGO_URI: str = "mongodb://localhost:27017" # Default to local if no env var
@@ -32,9 +32,13 @@ class Settings(BaseSettings):
     from pydantic import field_validator
     
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
-    def assemble_cors_origins(cls, v):
-        if isinstance(v, str):
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
+        if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
+        elif isinstance(v, str) and v.startswith("["):
+             # Handle list-like string [url1, url2] or ['url1', 'url2']
+            cleaned = v.strip("[]")
+            return [i.strip().strip("'\"") for i in cleaned.split(",")]
         return v
 
 settings = Settings()
