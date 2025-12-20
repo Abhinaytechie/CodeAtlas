@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     
     # Database
      # Default to local if no env var
+    MONGO_URI = os.getenv("MONGO_URI")
     MONGO_PASSWORD: Optional[str] = None
     DB_NAME: str = "roadmap_guide_db"
     
@@ -29,7 +30,7 @@ class Settings(BaseSettings):
     
        
 
-        self.MONGO_URI = os.getenv("MONGO_URI")
+        self.MONGO_URI = MONGO_URI
             
     from pydantic import field_validator
     
