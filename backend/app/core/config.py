@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # CORS
-    BACKEND_CORS_ORIGINS: Union[List[str], str] = ["http://localhost:5173", "http://localhost:3000"]
+    BACKEND_CORS_ORIGINS: Union[List[str], str] = ["http://localhost:5173", "http://localhost:3000","https://yourcodeatlas.vercel.app"]
     
     # Database
     MONGO_URI: str = "mongodb://localhost:27017" # Default to local if no env var
@@ -26,8 +26,8 @@ class Settings(BaseSettings):
         
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        if self.MONGO_PASSWORD and "<db_password>" in self.MONGO_URI:
-            self.MONGO_URI = self.MONGO_URI.replace("<db_password>", self.MONGO_PASSWORD)
+    
+        self.MONGO_URI = self.MONGO_URI
             
     from pydantic import field_validator
     
