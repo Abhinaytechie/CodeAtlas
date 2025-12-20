@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: Union[List[str], str] = ["http://localhost:5173", "http://localhost:3000","https://yourcodeatlas.vercel.app"]
     
     # Database
-     # Default to local if no env var
-    MONGO_URI = os.getenv("MONGO_URI")
+    # Database
+    MONGO_URI: str = "mongodb://localhost:27017" # Default to local, overridden by env var
     MONGO_PASSWORD: Optional[str] = None
     DB_NAME: str = "roadmap_guide_db"
     
@@ -25,13 +25,8 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-    
-       
 
-        self.MONGO_URI = MONGO_URI
-            
+   
     from pydantic import field_validator
     
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
