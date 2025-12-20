@@ -70,11 +70,11 @@ class ResumeParserService:
             raise ValueError("Invalid PDF file")
 
     def _clean_json(self, content: str) -> Dict[str, Any]:
-        content = content.strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.endswith("```"):
-            content = content[:-3]
+        import re
+        # Find JSON object using regex (starts with {, ends with }, includes newlines)
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+        if match:
+            content = match.group(0)
         return json.loads(content)
 
 resume_parser_service = ResumeParserService()

@@ -29,6 +29,8 @@ class Settings(BaseSettings):
    
     from pydantic import field_validator
     
+   
+
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
         if isinstance(v, str) and not v.startswith("["):
