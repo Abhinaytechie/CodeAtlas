@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-    baseURL: 'http://localhost:8000/api/v1',
+    baseURL: 'https://codeatlas-e8ap.onrender.com/api/v1',
     timeout: 60000, // 60 seconds timeout for AI generation
     headers: {
         'Content-Type': 'application/json',

@@ -430,7 +430,60 @@ const Roadmap = () => {
                     ))}
                 </div>
             </div>
-        </div >
+
+
+            {/* API Key Modal */}
+            {
+                roadmap?.is_simulated && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+                        <Card className="max-w-md w-full p-6 shadow-2xl border-primary/50">
+                            <div className="flex items-center gap-3 mb-4 text-warning">
+                                <AlertCircle className="h-6 w-6" />
+                                <h3 className="text-lg font-bold">Simulation Mode Active</h3>
+                            </div>
+                            <p className="text-text-secondary mb-4 text-sm">
+                                You are viewing a generic roadmap because no valid API Key was found.
+                                For a personalized AI-generated curriculum, please enter your Groq API Key.
+                            </p>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-semibold text-text-secondary uppercase mb-1 block">Groq API Key</label>
+                                    <Input
+                                        type="password"
+                                        placeholder="gsk_..."
+                                        className="w-full font-mono text-sm"
+                                        id="groq-key-input"
+                                    />
+                                    <p className="text-xs text-text-secondary mt-1">
+                                        Don't have one? <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="text-primary hover:underline">Get a free key here</a>.
+                                    </p>
+                                </div>
+
+                                <div className="flex gap-3 justify-end">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => setRoadmap(prev => ({ ...prev, is_simulated: false }))}
+                                    >
+                                        Dismiss
+                                    </Button>
+                                    <Button onClick={() => {
+                                        const key = document.getElementById('groq-key-input').value;
+                                        if (key) {
+                                            localStorage.setItem('groq_api_key', key);
+                                            // Trigger regeneration
+                                            generateRoadmap();
+                                        }
+                                    }}>
+                                        Save & Regenerate
+                                    </Button>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+                )
+            }
+        </div>
     );
 };
 

@@ -280,18 +280,57 @@ class ProjectIntelligenceService:
                     # PYTHON SCANNERS
                     if ext == '.py':
                         if framework == "FastAPI":
-                            with open(os.path.join(root, file), 'r', encoding='utf-8', errors='ignore') as f:
-                                content = f.read()
-                                matches = py_fastapi_pattern.findall(content)
-                                for method, url in matches:
-                                    routes.append({"method": method.upper(), "url": url, "file": file})
+                            try:
+                                import ast
+                                with open(os.path.join(root, file), 'r', encoding='utf-8', errors='ignore') as f:
+                                    file_content = f.read()
+                                    tree = ast.parse(file_content)
                                     
+                                    # 1. Find Prefixes
+                                    prefixes = {}
+                                    for node in ast.walk(tree):
+                                        if isinstance(node, ast.Assign):
+                                            for target in node.targets:
+                                                if isinstance(target, ast.Name):
+                                                    var_name = target.id
+                                                    if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
+                                                        if node.value.func.id == "APIRouter":
+                                                            for keyword in node.value.keywords:
+                                                                if keyword.arg == "prefix" and isinstance(keyword.value, ast.Constant):
+                                                                    prefixes[var_name] = keyword.value.value
+
+                                    # 2. Find Routes
+                                    for node in ast.walk(tree):
+                                        if isinstance(node, ast.FunctionDef):
+                                            for decorator in node.decorator_list:
+                                                if isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute):
+                                                    method_name = decorator.func.attr
+                                                    if method_name in ['get', 'post', 'put', 'delete', 'patch']:
+                                                        # Resolve router variable
+                                                        router_var = None
+                                                        if isinstance(decorator.func.value, ast.Name):
+                                                            router_var = decorator.func.value.id
+                                                        
+                                                        # Resolve Path
+                                                        path = None
+                                                        if decorator.args and isinstance(decorator.args[0], ast.Constant):
+                                                            path = decorator.args[0].value
+                                                        
+                                                        if path is not None:
+                                                            prefix = prefixes.get(router_var, "")
+                                                            full_path = f"{prefix}{path}".replace("//", "/")
+                                                            routes.append({"method": method_name.upper(), "url": full_path, "file": file})
+                            except Exception:
+                                pass # Fallback or skip file on parse error
+
                     # JS SCANNERS
                     elif ext in ['.js', '.ts', '.jsx', '.tsx']:
                         if framework == "Express.js":
                              with open(os.path.join(root, file), 'r', encoding='utf-8', errors='ignore') as f:
                                 content = f.read()
-                                matches = js_express_pattern.findall(content)
+                                # Improved Regex to catch variable router names
+                                # matches: app.get('/path'), router.post('/path'), v1Router.put('/path')
+                                matches = re.findall(r"""(?:\w+)\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]""", content)
                                 for method, url in matches:
                                     routes.append({"method": method.upper(), "url": url, "file": file})
 

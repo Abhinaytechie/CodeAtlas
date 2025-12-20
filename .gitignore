@@ -5,3 +5,5 @@ backend/venv/
 backend/logs/
 backend/temp_repos/
 frontend/node_modules/
+.env
+backend/.env

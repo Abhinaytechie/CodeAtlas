@@ -7,11 +7,10 @@ passlib[bcrypt]
 argon2-cffi
 pydantic-settings
 python-multipart
-openai
 langchain
 langchain_community
-langchain_google_genai
 websockets
 langchain-groq
 pypdf
 GitPython
+pydantic[email]

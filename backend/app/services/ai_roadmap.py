@@ -63,6 +63,7 @@ class AIRoadmapService:
         JSON Structure:
         {{
             "title": "{role} Placement Mastery Roadmap",
+            "is_simulated": false,
             "description": "A skill-based, tiered roadmap to get you interview-ready.",
             "levels": [
                 {{
@@ -153,6 +154,7 @@ class AIRoadmapService:
         """
         return {
             "title": f"{role} Mastery Roadmap (Simulated)",
+            "is_simulated": True,
             "description": "A skill-based, tiered roadmap to get you interview-ready (No API Key).",
             "levels": [
                 {
