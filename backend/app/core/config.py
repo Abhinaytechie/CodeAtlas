@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
 from typing import Optional, List, Union
-
+import os
 class Settings(BaseSettings):
     PROJECT_NAME: str = "DSA Platform API"
     API_V1_STR: str = "/api/v1"
@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: Union[List[str], str] = ["http://localhost:5173", "http://localhost:3000","https://yourcodeatlas.vercel.app"]
     
     # Database
-    MONGO_URI: str = "mongodb://localhost:27017" # Default to local if no env var
+     # Default to local if no env var
     MONGO_PASSWORD: Optional[str] = None
     DB_NAME: str = "roadmap_guide_db"
     
@@ -27,7 +27,9 @@ class Settings(BaseSettings):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
     
-        self.MONGO_URI = self.MONGO_URI
+       
+
+        self.MONGO_URI = os.getenv("MONGO_URI")
             
     from pydantic import field_validator
     
