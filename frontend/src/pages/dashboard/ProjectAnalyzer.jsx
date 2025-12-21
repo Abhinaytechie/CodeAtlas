@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Loader2, Code2, Layers, BookOpen, MessageSquare, UserCheck, Play, BrainCircuit, CheckCircle, FileText, Download } from 'lucide-react';
+import { Search, Loader2, Code2, Layers, BookOpen, MessageSquare, UserCheck, Play, BrainCircuit, CheckCircle, FileText, Download, Copy, Check, AlertTriangle, Wand2 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
@@ -14,6 +14,44 @@ const ProjectAnalyzer = () => {
     const [graphData, setGraphData] = useState('');
     const [jobId, setJobId] = useState(null);
     const [docs, setDocs] = useState(null);
+    const [copied, setCopied] = useState(false);
+    const [isGeneratingSpec, setIsGeneratingSpec] = useState(false);
+
+    const handleCopy = async () => {
+        if (!docs?.readme) return;
+        try {
+            await navigator.clipboard.writeText(docs.readme);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy text: ', err);
+        }
+    };
+
+    const handleGenerateSpec = async () => {
+        setIsGeneratingSpec(true);
+        try {
+            const apiKey = localStorage.getItem('groq_api_key');
+            const res = await api.post('/project/generate-openapi', { repo_url: repoUrl }, {
+                headers: apiKey ? { 'x-groq-api-key': apiKey } : {}
+            });
+
+            // Merge results
+            if (res.data.spec_json) {
+                setDocs(prev => ({
+                    ...prev,
+                    api_specs: res.data.routes,
+                    warnings: ["⚠️ API Specification was AI-generated from source code. Verify accuracy."] // Overwrite old warning
+                }));
+            }
+        } catch (error) {
+            console.error("AI Spec Generation failed", error);
+            alert("Failed to generate spec. Check logs.");
+        } finally {
+            setIsGeneratingSpec(false);
+        }
+        //new
+    };
 
     // Step 1: Visualize Architecture
     const handleVisualize = async () => {
@@ -121,7 +159,10 @@ const ProjectAnalyzer = () => {
                             <h3 className="font-bold flex items-center gap-2">
                                 <BookOpen className="h-5 w-5 text-primary" /> Generated README.md
                             </h3>
-                            <Button size="xs" variant="outline"> <Download className="h-4 w-4" /> Copy</Button>
+                            <Button size="xs" variant="outline" onClick={handleCopy}>
+                                {copied ? <Check className="h-4 w-4 text-green-500 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+                                {copied ? "Copied!" : "Copy Markdown"}
+                            </Button>
                         </div>
                         <div className="prose prose-invert prose-sm max-w-none">
                             <ReactMarkdown>{docs.readme}</ReactMarkdown>
@@ -133,6 +174,35 @@ const ProjectAnalyzer = () => {
                         <h3 className="font-bold flex items-center gap-2 mb-6">
                             <Code2 className="h-5 w-5 text-primary" /> API Specification ({docs.api_specs.length} Endpoint detected)
                         </h3>
+
+                        {docs.warnings && docs.warnings.length > 0 && (
+                            <div className="mb-4 space-y-3">
+                                {docs.warnings.map((warn, i) => (
+                                    <div key={i} className="flex flex-col gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded text-red-200 text-sm">
+                                        <div className="flex items-start gap-2">
+                                            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                                            <span>{warn}</span>
+                                        </div>
+                                        {/* Auto-Gen Button Trigger */}
+                                        {warn.includes("OpenAPI specification not found") && (
+                                            <Button
+                                                onClick={handleGenerateSpec}
+                                                disabled={isGeneratingSpec}
+                                                size="sm"
+                                                className="self-start mt-2 bg-purple-600 hover:bg-purple-700 text-white border-none"
+                                            >
+                                                {isGeneratingSpec ? (
+                                                    <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                                                ) : (
+                                                    <Wand2 className="h-3 w-3 mr-2" />
+                                                )}
+                                                Generate Standard OpenAPI with AI
+                                            </Button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         <div className="space-y-2">
                             {docs.api_specs.length > 0 ? docs.api_specs.map((route, i) => (
                                 <div key={i} className="flex items-center gap-3 p-3 bg-surface rounded border border-border">

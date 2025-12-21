@@ -15,7 +15,7 @@ from app.api.v1.router import api_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="API for the AI-Powered DSA Preparation Platform",
+    description="API for the AI-Powered CodeAtlas Platform",
     version="1.0.0",
 )
 
@@ -50,7 +50,7 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to the DSA Platform API"}
+    return {"message": "Welcome to the CodeAtlas API"}
 
 @app.get("/health")
 async def health_check():

@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 from typing import Optional, List, Union
 import os
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "DSA Platform API"
+    PROJECT_NAME: str = "CodeAtlas API"
     API_V1_STR: str = "/api/v1"
     
     # CORS

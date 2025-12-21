@@ -5,6 +5,7 @@ from app.services.ai_interview import ai_interview_service
 from app.services.resume_parser import resume_parser_service
 from datetime import datetime
 from bson import ObjectId
+from app.api.v1 import deps
 
 router = APIRouter()
 
@@ -43,7 +44,8 @@ async def upload_resume(
 async def start_interview(
     body: dict = Body(...),
     x_groq_api_key: str | None = Header(default=None, alias="x-groq-api-key"),
-    db: Any = Depends(get_db)
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     """
     Start a new AI Interview Session.
@@ -63,9 +65,8 @@ async def start_interview(
             print(f"Resume parsing failed: {e}")
             # Continue without resume if parsing fails (graceful degradation)
     
-    # 2. Get/Create User (Demo hack)
-    user = db.user_stats.find_one(sort=[("_id", -1)])
-    user_id = user["user_id"] if user else "demo_user"
+    # 2. Get User
+    user_id = str(current_user["_id"])
     
     # 3. Call AI Service to generate opening
     try:
@@ -111,7 +112,8 @@ async def reply_to_interview(
     session_id: str,
     body: dict = Body(...),
     x_groq_api_key: str | None = Header(default=None, alias="x-groq-api-key"),
-    db: Any = Depends(get_db)
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     """
     Process user answer and get next question.
@@ -177,10 +179,12 @@ async def reply_to_interview(
     }
 
 @router.get("/history")
-def get_interview_history(db: Any = Depends(get_db)) -> Any:
-    # Hack: Demo user
-    user = db.user_stats.find_one(sort=[("_id", -1)])
-    user_id = user["user_id"] if user else "demo_user"
+def get_interview_history(
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
+) -> Any:
+    # Get User
+    user_id = str(current_user["_id"])
     
     cursor = db.interview_sessions.find({"user_id": user_id}).sort("created_at", -1).limit(10)
     sessions = []

@@ -12,7 +12,7 @@ const Layout = () => {
                 <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
                     <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                         <Link to="/" className="text-xl font-display font-bold tracking-tight">
-                            Roadmap<span className="text-primary">Guide</span>
+                            Code<span className="text-primary">Atlas</span>
                         </Link>
                         <div className="flex items-center gap-4">
                             <Link to="/login" className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">

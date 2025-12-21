@@ -36,7 +36,7 @@ const DashboardLayout = () => {
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const location = useLocation();
     const path = location.pathname;
-    const { logout } = useAuth();
+    const { logout, user } = useAuth();
     const navigate = useNavigate();
 
     const handleLogout = async () => {
@@ -97,7 +97,7 @@ const DashboardLayout = () => {
                     <div className="flex items-center gap-4">
                         <Link to="/dashboard/profile">
                             <div className="h-8 w-8 rounded-full bg-primary/20 border border-primary/50 text-primary flex items-center justify-center text-sm font-medium hover:bg-primary/30 transition-colors cursor-pointer">
-                                JD
+                                {user?.username?.substring(0, 2).toUpperCase() || "U"}
                             </div>
                         </Link>
                     </div>
