@@ -20,11 +20,11 @@ A comprehensive platform for project management, interview analytics, and roadma
 ## 📦 Installation Guide
 To install and run the project, follow these steps:
 
-1. **Clone the repository**: `git clone https://github.com/your-repo/ai-project-management.git`
+1. **Clone the repository**: `git clone https://github.com/Abhinaytechie/CodeAtlas.git`
 2. **Create a virtual environment**: `python -m venv venv`
 3. **Activate the virtual environment**: `source venv/bin/activate` (on Linux/Mac) or `venv\Scripts\activate` (on Windows)
 4. **Install dependencies**: `pip install -r backend/requirements.txt`
 5. **Run the application**: `uvicorn backend.app.main:app --host 0.0.0.0 --port 8000`
 6. **Access the API documentation**: `http://localhost:8000/docs`
 
-Note: Make sure to replace `https://github.com/your-repo/ai-project-management.git` with the actual repository URL.
+
