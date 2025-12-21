@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.content import QUESTION_BANK
 from datetime import datetime, timedelta
+from app.api.v1 import deps
 
 # For now, we manually get the user assuming we are authenticated.
 # In a real app, we'd use dependencies.get_current_user
@@ -12,12 +13,14 @@ router = APIRouter()
 @router.get("/stats")
 def get_user_stats(
     db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     """
     Get real-time user statistics with detailed breakdown.
     """
-    # Hack for demo: Get last created user stat
-    user_stat = db.user_stats.find_one(sort=[("_id", -1)])
+    # Get user stats from current user
+    user_id = str(current_user["_id"])
+    user_stat = db.user_stats.find_one({"user_id": user_id})
     
     if not user_stat:
         # Fallback
@@ -61,20 +64,20 @@ def get_user_stats(
 @router.post("/solve/{problem_id}")
 def toggle_problem(
     problem_id: str,
-    db: Any = Depends(get_db)
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     """
     Toggle a problem as solved/unsolved.
     Updates streak and solved count.
     """
-    # Hack for demo: Get last created user stat
-    # Hack for demo: Get last created user stat or create one
-    user_stat = db.user_stats.find_one(sort=[("_id", -1)])
+    user_id = str(current_user["_id"])
+    user_stat = db.user_stats.find_one({"user_id": user_id})
     
     if not user_stat:
         # Create default user stats if missing
         user_stat = {
-            "user_id": "demo_user",
+            "user_id": user_id,
             "solved_problems": [],
             "streak_dates": [],
             "streak": 0,
@@ -130,7 +133,8 @@ def toggle_problem(
 @router.post("/progress")
 def update_progress(
     item: dict,
-    db: Any = Depends(get_db)
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     """
     Bulk update solved problems (Manual Save).
@@ -138,11 +142,11 @@ def update_progress(
     """
     solved_ids = item.get("solved_ids", [])
     
-    # Hack: Get/Create User Stats
-    user_stat = db.user_stats.find_one(sort=[("_id", -1)])
+    user_id = str(current_user["_id"])
+    user_stat = db.user_stats.find_one({"user_id": user_id})
     if not user_stat:
         user_stat = {
-            "user_id": "demo_user",
+            "user_id": user_id,
             "solved_problems": [],
             "streak_dates": [],
             "streak": 0,

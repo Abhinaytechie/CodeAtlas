@@ -9,13 +9,24 @@ export const AuthProvider = ({ children }) => {
 
     useEffect(() => {
         // Check if token exists on load
-        const token = localStorage.getItem('token');
-        if (token) {
-            // Technically we should validate the token here via an API call /me
-            // For now, we'll just assume they are logged in or decode the JWT if needed
-            setUser({ token });
-        }
-        setLoading(false);
+        const initAuth = async () => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                try {
+                    const { data } = await api.get('/users/me');
+                    setUser({ token, ...data });
+                } catch (error) {
+                    console.error("Failed to fetch user profile", error);
+                    // Optionally logout if token is invalid
+                    if (error.response && error.response.status === 401) {
+                        localStorage.removeItem('token');
+                        setUser(null);
+                    }
+                }
+            }
+            setLoading(false);
+        };
+        initAuth();
     }, []);
 
     const login = async (email, password) => {
@@ -29,12 +40,22 @@ export const AuthProvider = ({ children }) => {
 
         const { access_token } = response.data;
         localStorage.setItem('token', access_token);
-        setUser({ token: access_token });
+
+        // Fetch user profile immediately
+        try {
+            const userResponse = await api.get('/users/me');
+            setUser({ token: access_token, ...userResponse.data });
+        } catch (e) {
+            console.error("Login successful but failed to fetch profile", e);
+            setUser({ token: access_token });
+        }
+
         return response.data;
     };
 
     const signup = async (userData) => {
         const response = await api.post('/auth/signup', userData);
+        // Auto-login after signup if desired, or just return
         return response.data;
     };
 
