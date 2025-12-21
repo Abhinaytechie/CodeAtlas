@@ -182,21 +182,54 @@ class DocsGenerator:
     async def generate_readme(self, path: str, api_key: str) -> str:
         if not api_key: return "# README\n\nGenerated without API Key."
         
+        code_context = ""
         structure = ""
         deps = ""
+        
+        # Priority patterns for "Actual Functionality"
+        interesting_files = {
+            'main.py', 'app.py', 'index.js', 'server.js', 'app.js', 
+            'routes.py', 'urls.py', 'api.py', 'schema.graphql', 'docker-compose.yml'
+        }
+        interesting_dirs = {'api', 'routes', 'controllers', 'services', 'models', 'core', 'lib'}
+
         for root, dirs, files in os.walk(path):
             if '.git' in root or 'node_modules' in root: continue
+            
+            # 1. Build File Structure
             level = root.replace(path, '').count(os.sep)
             if level > 2: continue # Limit depth
             indent = ' ' * 4 * level
             structure += f"{indent}{os.path.basename(root)}/\n"
+            
+            dirname = os.path.basename(root).lower()
+
             for f in files:
                 structure += f"{indent}    {f}\n"
-                if f in ['package.json', 'requirements.txt', 'pom.xml']:
+                
+                # 2. Capture Dependencies
+                if f in ['package.json', 'requirements.txt', 'pom.xml', 'go.mod', 'Cargo.toml']:
                     try:
-                        with open(os.path.join(root, f), 'r') as df: deps += df.read()[:500] + "\n"
+                        with open(os.path.join(root, f), 'r', errors='ignore') as df: 
+                            deps += f"--- {f} ---\n{df.read()[:800]}\n"
                     except: pass
-            if len(structure) > 1500: break
+                
+                # 3. Capture Code Context (Key Codebase Files)
+                # Check specifics or directory heuristics
+                is_interesting = f.lower() in interesting_files
+                if not is_interesting and dirname in interesting_dirs and f.endswith(('.py', '.js', '.ts', '.java', '.go')):
+                     is_interesting = True
+                
+                if is_interesting and len(code_context) < 12000: # Limit total context
+                    try:
+                        with open(os.path.join(root, f), 'r', errors='ignore') as source:
+                            content = source.read()
+                            # Grab imports and top of file definitions
+                            code_context += f"\n--- File: {os.path.join(os.path.basename(root), f)} ---\n"
+                            code_context += content[:1500] + "\n" # First 1.5k chars likely contain imports & main classes
+                    except: pass
+
+            if len(structure) > 2000: continue # Don't break loop, just stop adding structure
 
         chat = ChatGroq(temperature=0.2, groq_api_key=api_key, model_name="llama-3.3-70b-versatile")
         prompt = f"""
@@ -204,8 +237,7 @@ class DocsGenerator:
 
 Your task is to write a professional, accurate README.md for this codebase.
 The README must reflect the ACTUAL functionality of the project inferred from
-the file structure and dependencies — do NOT assume AI-related features unless
-clearly indicated.
+the source code context provided below.
 
 File Structure:
 {structure}
@@ -213,32 +245,35 @@ File Structure:
 Dependencies:
 {deps}
 
+🔍 Source Code Analysis (Key Files):
+{code_context}
+
 Guidelines:
-- Infer functionality from folder names, file names, and dependencies
-  (e.g., auth, api, routes, services, controllers, utils, config, db).
-- If a feature is not clearly supported by the codebase, do NOT invent it.
-- Keep the tone professional, concise, and production-ready.
-- Avoid buzzwords and marketing fluff.
-- Assume this README is for developers who will run, maintain, or extend the project.
+- Analyze the 'Source Code Analysis' section to determine what the app actually does.
+- Look at imports, API routes (GET/POST), Database models, and Main entry points.
+- If you see 'import stripe', mention Payment Integration.
+- If you see 'router.post("/login")', mention Authentication.
+- If you see 'Docker', mention Containerization.
 
 Sections required:
 
 1. 📌 Title & Description
    - Infer a meaningful project name if not explicitly available.
-   - Provide a clear one-paragraph description of what the application does.
+   - Provide a clear one-paragraph description of what the application does based on the code evidence.
 
 2. 🧱 Architecture Overview
    - Briefly explain how the project is structured (frontend/backend/modules/services).
    - Mention major layers or components and their responsibilities.
 
 3. 🛠 Tech Stack (Badges)
-   - List languages, frameworks, databases, and tooling inferred from dependencies.
+   - List languages, frameworks, databases, and tooling inferred from dependencies and code.
    - Use standard shields.io-style badges.
 
-4. ✨ Key Features
+4. ✨ Key Features (CRITICAL)
    - List concrete, observable features (e.g., authentication, REST APIs,
      CRUD operations, configuration management, logging, integrations).
-   - Base features strictly on code evidence.
+   - YOU MUST BASE FEATURES ON THE 'SOURCE CODE ANALYSIS' DATA.
+   - Do not hallucinate features.
 
 5. 📂 Project Structure
    - Explain the purpose of key directories and files.
@@ -265,7 +300,6 @@ Sections required:
 Important:
 - Accuracy is more important than completeness.
 - If something is unclear, describe it conservatively.
-
         """
         try:
              res = await chat.ainvoke(prompt)
