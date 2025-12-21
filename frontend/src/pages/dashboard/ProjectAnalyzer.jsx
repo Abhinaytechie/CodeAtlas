@@ -157,7 +157,7 @@ const ProjectAnalyzer = () => {
                     <Card className="p-6 h-[600px] overflow-y-auto">
                         <div className="flex justify-between items-center mb-4 sticky top-0 bg-surface/95 p-2 rounded backdrop-blur z-10">
                             <h3 className="font-bold flex items-center gap-2">
-                                <BookOpen className="h-5 w-5 text-primary" /> Generated README.md
+                                <BookOpen className="h-5 w-5 text-primary" /> Generated Technical README.md
                             </h3>
                             <Button size="xs" variant="outline" onClick={handleCopy}>
                                 {copied ? <Check className="h-4 w-4 text-green-500 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
