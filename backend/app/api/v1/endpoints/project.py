@@ -42,3 +42,25 @@ async def project_docs(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/generate-openapi")
+async def generate_openapi(
+    body: dict = Body(...),
+    x_groq_api_key: str | None = Header(default=None, alias="x-groq-api-key"),
+    db: Any = Depends(get_db)
+) -> Any:
+    """
+    Step 3 (Optional): AI OpenAPI Generation.
+    """
+    repo_url = body.get("repo_url")
+    if not repo_url:
+        raise HTTPException(status_code=400, detail="Repo URL is required")
+
+    try:
+        if not x_groq_api_key:
+             raise HTTPException(status_code=400, detail="API Key required for generation")
+             
+        result = await project_intelligence_service.generate_ai_openapi_for_repo(repo_url, x_groq_api_key)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

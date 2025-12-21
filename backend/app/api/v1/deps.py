@@ -26,7 +26,8 @@ def get_current_user(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Could not validate credentials",
             )
-    except (JWTError, ValidationError):
+    except (JWTError, ValidationError) as e:
+        print(f"Auth Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Could not validate credentials",
@@ -35,10 +36,12 @@ def get_current_user(
     try:
         user_id = ObjectId(token_data_sub)
     except:
+        print(f"Invalid ObjectId: {token_data_sub}")
         raise HTTPException(status_code=400, detail="Invalid user ID in token")
         
     user = db.users.find_one({"_id": user_id})
     if not user:
+        print(f"User not found for ID: {user_id}")
         raise HTTPException(status_code=404, detail="User not found")
         
     return user
