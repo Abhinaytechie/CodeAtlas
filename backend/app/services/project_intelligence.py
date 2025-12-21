@@ -200,19 +200,72 @@ class DocsGenerator:
 
         chat = ChatGroq(temperature=0.2, groq_api_key=api_key, model_name="llama-3.3-70b-versatile")
         prompt = f"""
-        Act as a Principal Software Engineer. Write a README.md for this codebase.
-        
-        File Structure:
-        {structure}
-        
-        Dependencies:
-        {deps}
-        
-        Sections required:
-        1. Title & Description
-        2. Tech Stack (Badges)
-        3. Key Features
-        4. Setup/Run Instructions
+       Act as a Principal Software Engineer and Technical Writer.
+
+Your task is to write a professional, accurate README.md for this codebase.
+The README must reflect the ACTUAL functionality of the project inferred from
+the file structure and dependencies — do NOT assume AI-related features unless
+clearly indicated.
+
+File Structure:
+{structure}
+
+Dependencies:
+{deps}
+
+Guidelines:
+- Infer functionality from folder names, file names, and dependencies
+  (e.g., auth, api, routes, services, controllers, utils, config, db).
+- If a feature is not clearly supported by the codebase, do NOT invent it.
+- Keep the tone professional, concise, and production-ready.
+- Avoid buzzwords and marketing fluff.
+- Assume this README is for developers who will run, maintain, or extend the project.
+
+Sections required:
+
+1. 📌 Title & Description
+   - Infer a meaningful project name if not explicitly available.
+   - Provide a clear one-paragraph description of what the application does.
+
+2. 🧱 Architecture Overview
+   - Briefly explain how the project is structured (frontend/backend/modules/services).
+   - Mention major layers or components and their responsibilities.
+
+3. 🛠 Tech Stack (Badges)
+   - List languages, frameworks, databases, and tooling inferred from dependencies.
+   - Use standard shields.io-style badges.
+
+4. ✨ Key Features
+   - List concrete, observable features (e.g., authentication, REST APIs,
+     CRUD operations, configuration management, logging, integrations).
+   - Base features strictly on code evidence.
+
+5. 📂 Project Structure
+   - Explain the purpose of key directories and files.
+
+6. ⚙️ Configuration
+   - Mention environment variables, config files, or setup requirements if present.
+
+7. 🚀 Setup & Run Instructions
+   - Provide step-by-step instructions to install dependencies and run the project.
+   - Include separate steps for development and production if applicable.
+
+8. 🧪 Testing (if applicable)
+   - Describe how tests are organized and how to run them, if test tooling is detected.
+
+9. 📦 Build / Deployment (if applicable)
+   - Explain build steps, scripts, or deployment assumptions if present.
+
+10. 🤝 Contributing
+    - Include basic contribution guidelines.
+
+11. 📄 License
+    - Mention license if identifiable, otherwise note that it is unspecified.
+
+Important:
+- Accuracy is more important than completeness.
+- If something is unclear, describe it conservatively.
+
         """
         try:
              res = await chat.ainvoke(prompt)
