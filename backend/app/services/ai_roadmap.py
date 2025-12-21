@@ -59,6 +59,14 @@ class AIRoadmapService:
         - TRACKS: Each level must have parallel tracks: DSA, Core Skills, Projects, Interview Signals.
         - SKILLS: Each skill MUST have a unique 'id' (kebab-case slug) and 'resources' (best free links).
         - CONTENT: Practical, recruiter-aligned expectations. No motivational fluff.
+        
+        CRITICAL RESOURCE RULES:
+        1. ONLY use stable, high-authority links (Official Docs, MDN, Python.org, React.dev).
+        2. For DSA: Use NeetCode.io, Striver (TakeUForward), or LeetCode specific problem links.
+        3. For Courses: Use Coursera, Udemy, or freeCodeCamp.
+        4. YOUTUBE PLAYLISTS: MUST include high-quality playlists from TOP educators (e.g., Hitesh Choudhary, Striver, Krish Naik,Telsko,Codebasics,ApnaCollege Corey Schafer, Hussein Nasser).
+        5. DO NOT use generic blogs (Medium, Dev.to) unless absolutely necessary.
+        6. DO NOT use placeholders like "example.com" or "youtube.com/...".
 
         JSON Structure:
         {{
