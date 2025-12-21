@@ -1,27 +1,20 @@
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
+from app.api.v1 import deps
 
 router = APIRouter()
 
 @router.get("/me")
 async def read_user_me(
-    db: Any = Depends(get_db)
+    current_user: dict = Depends(deps.get_current_user),
 ) -> Any:
     """
     Get current user profile.
-    For now, returns the last created user as a mock for 'current user'.
     """
-    user = db.users.find_one(sort=[("_id", -1)])
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Get user stats for joined date (approx) or use created_at if available
-    # Assuming user doc has basic info.
-    
     return {
-        "username": user.get("full_name", "User"),
-        "email": user.get("email"),
-        "target_role": user.get("target_role", "Backend"),
-        "joined_at": str(user.get("_id").generation_time.date()) # Extract date from ObjectId
+        "username": current_user.get("full_name", "User"),
+        "email": current_user.get("email"),
+        "target_role": current_user.get("target_role", "Backend"),
+        "joined_at": str(current_user.get("_id").generation_time.date())
     }

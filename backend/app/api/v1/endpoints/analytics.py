@@ -2,6 +2,7 @@ from typing import List, Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from app.core.database import get_db
 from datetime import datetime
+from app.api.v1 import deps
 
 router = APIRouter()
 
@@ -35,13 +36,23 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
         manager.disconnect(websocket)
 
 @router.get("/kpis")
-def get_kpis(db: Any = Depends(get_db)) -> Any:
+def get_kpis(
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
+) -> Any:
     """
     Get high-level KPIs for the analytics dashboard
     """
-    # Hack: Demo user
-    user = db.user_stats.find_one(sort=[("_id", -1)])
-    user_id = user["user_id"] if user else "demo_user"
+    user_id = str(current_user["_id"])
+    user = db.user_stats.find_one({"user_id": user_id})
+    if not user:
+        # Return empty stats if no stats record exists yet
+        return {
+            "mastery_score": 0,
+            "skills_mastered": 0,
+            "streak": 0,
+            "interview_readiness": "N/A"
+        }
     
     # Calculate Mastery
     solved_count = len(user.get("solved_problems", []))
@@ -64,7 +75,10 @@ def get_kpis(db: Any = Depends(get_db)) -> Any:
     }
 
 @router.get("/skills")
-def get_skill_distribution(db: Any = Depends(get_db)) -> Any:
+def get_skill_distribution(
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
+) -> Any:
     """
     Get skill breakdown (e.g. by Track)
     """
@@ -78,13 +92,14 @@ def get_skill_distribution(db: Any = Depends(get_db)) -> Any:
     ]
 
 @router.get("/interviews")
-def get_interview_trends(db: Any = Depends(get_db)) -> Any:
+def get_interview_trends(
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
+) -> Any:
     """
     Get recent interview performance trend
     """
-    # Hack: Demo user
-    user = db.user_stats.find_one(sort=[("_id", -1)])
-    user_id = user["user_id"] if user else "demo_user"
+    user_id = str(current_user["_id"])
     
     sessions = list(db.interview_sessions.find({"user_id": user_id}).sort("created_at", 1).limit(10))
     data = []
@@ -105,13 +120,14 @@ def get_interview_trends(db: Any = Depends(get_db)) -> Any:
     return data
 
 @router.get("/feedback")
-def get_recent_feedback(db: Any = Depends(get_db)) -> Any:
+def get_recent_feedback(
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
+) -> Any:
     """
     Get aggregated feedback from recent sessions.
     """
-    # Hack: Demo user
-    user = db.user_stats.find_one(sort=[("_id", -1)])
-    user_id = user["user_id"] if user else "demo_user"
+    user_id = str(current_user["_id"])
     
     # Get last 3 sessions
     sessions = list(db.interview_sessions.find({"user_id": user_id}).sort("created_at", -1).limit(3))

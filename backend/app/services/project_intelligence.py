@@ -3,98 +3,135 @@ import shutil
 import uuid
 import logging
 import json
-from typing import Dict, Any, List
+import re
+from typing import Dict, Any, List, Optional
 from git import Repo
 from langchain_groq import ChatGroq
 
 logger = logging.getLogger(__name__)
 
-class ProjectIntelligenceService:
-    def __init__(self):
-        self.temp_base = "temp_repos"
-        os.makedirs(self.temp_base, exist_ok=True)
+# --- Component 1: Repo Loader ---
+class RepoLoader:
+    def __init__(self, base_dir="temp_repos"):
+        self.base_dir = base_dir
+        os.makedirs(self.base_dir, exist_ok=True)
 
-    async def analyze_project_structure(self, repo_url: str, api_key: str) -> Dict[str, Any]:
-        """
-        Stage 1: Clone & Map Architecture (Mermaid).
-        """
+    def clone_repo(self, repo_url: str) -> str:
         job_id = str(uuid.uuid4())
-        repo_path = os.path.join(self.temp_base, job_id)
-        
+        repo_path = os.path.join(self.base_dir, job_id)
         try:
-            # 1. Clone
+            logger.info(f"Cloning {repo_url} to {repo_path}")
             Repo.clone_from(repo_url, repo_path)
-            
-            # 2. Map Architecture (Deterministic Scan)
-            graph_data = self._agent_architecture_map(repo_path)
-            
-            return {
-                "job_id": job_id,
-                "graph_data": graph_data, # For Mermaid
-                "repo_path_id": job_id # Keep for step 2
-            }
+            return repo_path
         except Exception as e:
-            logger.error(f"Analysis failed: {e}")
+            logger.error(f"Clone failed: {e}")
+            if os.path.exists(repo_path):
+                shutil.rmtree(repo_path, ignore_errors=True)
             raise e
 
-    async def generate_docs(self, job_id: str, api_key: str) -> Dict[str, str]:
-        """
-        Stage 2: Generate Documentation (README + API Specs).
-        """
-        repo_path = os.path.join(self.temp_base, job_id)
-        if not os.path.exists(repo_path):
-             return {"error": "Repo session expired. Please analyze again."}
+    def cleanup(self, path: str):
+        if os.path.exists(path):
+            shutil.rmtree(path, ignore_errors=True)
 
-        # Agent: Docs Engineer (LLM)
-        readme = await self._agent_docs_engineer(repo_path, api_key)
+# --- Component 2: API Contract Service (OpenAPI First) ---
+class ApiContractService:
+    def detect_framework(self, path: str) -> str:
+        # Check Node.js
+        if os.path.exists(os.path.join(path, "package.json")):
+            try:
+                with open(os.path.join(path, "package.json"), 'r', encoding='utf-8') as f:
+                    content = f.read().lower()
+                    if '"express"' in content: return "Express.js"
+                    if '"nest"' in content: return "NestJS"
+                    if '"fastify"' in content: return "Fastify"
+            except: pass
         
-        # Agent: API Scanner (Heuristic)
-        api_data = self._agent_api_scanner(repo_path)
-        
-        # Cleanup after docs done
-        shutil.rmtree(repo_path, ignore_errors=True)
-        
-        return {
-            "readme": readme,
-            "api_specs": api_data["routes"],
-            "detected_framework": api_data["framework"]
-        }
+        # Check Python
+        if os.path.exists(os.path.join(path, "requirements.txt")):
+            try:
+                with open(os.path.join(path, "requirements.txt"), 'r', encoding='utf-8') as f:
+                    content = f.read().lower()
+                    if "fastapi" in content: return "FastAPI"
+                    if "flask" in content: return "Flask"
+                    if "django" in content: return "Django"
+            except: pass
 
-    def _agent_architecture_map(self, path: str) -> str:
+        # Check Java
+        if os.path.exists(os.path.join(path, "pom.xml")) or os.path.exists(os.path.join(path, "build.gradle")):
+             return "Spring Boot"
+             
+        return "Unknown"
+
+    def get_api_specs(self, path: str) -> Dict[str, Any]:
         """
-        Scans code imports to build a Mermaid Flowchart.
-        Uses Regex to find explicit imports (Python/JS).
-        Fall backs to Directory Tree if no imports found.
+        STRICT: Only returns specs if OpenAPI/Swagger file is found.
+        Does NOT use regex/AST for routes.
         """
-        import re
+        search_files = ['openapi.json', 'swagger.json', 'api-docs.json']
+        ignored_dirs = {'node_modules', 'venv', 'dist', 'build', '.git', '__pycache__'}
+        
+        for root, dirs, files in os.walk(path):
+            dirs[:] = [d for d in dirs if d not in ignored_dirs]
+            
+            for target in search_files:
+                if target in files:
+                    filepath = os.path.join(root, target)
+                    try:
+                        with open(filepath, 'r', encoding='utf-8') as f:
+                            spec = json.load(f)
+                            # Basic validation it's an OpenAPI spec
+                            if "openapi" in spec or "swagger" in spec:
+                                logger.info(f"OpenAPI Spec found: {filepath}")
+                                return self._parse_openapi(spec, target)
+                    except Exception as e:
+                        logger.warning(f"Failed to parse potential OpenAPI file {filepath}: {e}")
+
+        # If we reach here, no spec found.
+        # Strict mode: Error out.
+        return {"error": "OpenAPI specification not found. API intelligence unavailable."}
+
+    def _parse_openapi(self, spec: Dict, filename: str) -> Dict[str, Any]:
+        routes = []
+        if "paths" in spec:
+            for path, methods in spec["paths"].items():
+                for method, details in methods.items():
+                    if method.lower() in ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']:
+                        routes.append({
+                            "method": method.upper(),
+                            "url": path,
+                            "summary": details.get("summary", ""),
+                            "file": filename
+                        })
+        return {"routes": routes[:100]} # Limit to 100 for safety
+
+# --- Component 3: Architecture Mapper (Static Hints) ---
+class ArchitectureMapper:
+    def map_architecture(self, path: str) -> str:
+        """
+        Visualizes imports or directory structure.
+        """
         nodes = set()
         edges = set()
         
-        # Regex Patterns
-        # JS: import X from './path' or require('./path')
+        # Simple Regex for imports (Fallback, robust)
         js_import_pattern = re.compile(r"""(?:import\s+.*\s+from\s+['"](.*)['"])|(?:require\(['"](.*)['"])""")
-        # Python: from x import y or import x
         py_import_pattern = re.compile(r"""(?:from\s+(\S+)\s+import)|(?:import\s+(\S+))""")
-
+        
         target_ext = {'.js', '.jsx', '.ts', '.tsx', '.py'}
         ignored_dirs = {'node_modules', 'venv', 'dist', 'build', '.git', 'test', 'tests', '__pycache__'}
-        
-        file_map = {} # basename -> full path for resolution
+        file_map = {}
 
-        # Pass 1: Collect Nodes
+        # 1. Collect Nodes
         for root, dirs, files in os.walk(path):
             dirs[:] = [d for d in dirs if d not in ignored_dirs]
             for file in files:
                 if os.path.splitext(file)[1] in target_ext:
                     node_name = os.path.splitext(file)[0]
-                    # dedup identical filenames (e.g. index.js)
                     if node_name in file_map: node_name = f"{node_name}_{os.path.basename(root)}"
-                    
                     file_map[node_name] = file
-                    # Store simpler map for partial matching: "auth" -> "auth_service"
                     nodes.add(node_name)
 
-        # Pass 2: Scan Imports
+        # 2. Scan Imports (Regex)
         for root, dirs, files in os.walk(path):
             dirs[:] = [d for d in dirs if d not in ignored_dirs]
             for file in files:
@@ -109,272 +146,228 @@ class ProjectIntelligenceService:
                     with open(os.path.join(root, file), 'r', encoding='utf-8', errors='ignore') as f:
                         lines = f.readlines()
                         for line in lines:
-                            # 1. Check JS Imports
-                            if ext in ['.js', '.jsx', '.ts', '.tsx']:
-                                match = js_import_pattern.search(line)
-                                if match:
-                                    target = match.group(1) or match.group(2)
-                                    if not target: continue
-                                    # Resolve "./components/Button" -> "Button"
-                                    target_base = os.path.basename(target)
-                                    target_name = os.path.splitext(target_base)[0]
-                                    if target_name in nodes and target_name != source_node:
-                                        edges.add(f"    {source_node} --> {target_name}")
-
-                            # 2. Check Python Imports
-                            if ext == '.py':
-                                match = py_import_pattern.search(line)
-                                if match:
-                                    target = match.group(1) or match.group(2)
-                                    if not target: continue
-                                    # Resolve "app.services.auth" -> "auth"
-                                    target_name = target.split('.')[-1] 
-                                    if target_name in nodes and target_name != source_node:
-                                        edges.add(f"    {source_node} --> {target_name}")
+                             target = None
+                             if ext in ['.js', '.jsx', '.ts', '.tsx']:
+                                 m = js_import_pattern.search(line)
+                                 if m: target = m.group(1) or m.group(2)
+                             elif ext == '.py':
+                                 m = py_import_pattern.search(line)
+                                 if m: target = m.group(1) or m.group(2)
+                             
+                             if target:
+                                 # Basic Clean
+                                 target = os.path.basename(target).split('.')[0]
+                                 if target in nodes and target != source_node:
+                                      edges.add(f"    {source_node} --> {target}")
                 except: pass
 
-        # Fallback: Directory Structure Graph
+        # Fallback to Directory Graph if sparse
         if len(edges) < 3:
-            logger.info("Few explicit imports found. Falling back to Directory Graph.")
-            edges = set() # Clear sparse edges
-            for root, dirs, files in os.walk(path):
+             edges = set()
+             for root, dirs, files in os.walk(path):
                 dirs[:] = [d for d in dirs if d not in ignored_dirs]
-                
-                parent_dir = os.path.basename(root)
-                if root == path: parent_dir = "Root"
-                
-                # Link Parent -> Child Dir
-                for d in dirs:
-                    edges.add(f"    {parent_dir} --> {d}[/{d}/]")
-                
-                # Link Parent -> Files (Max 5 per dir to avoid clutter)
-                count = 0
-                for f in files:
-                    if os.path.splitext(f)[1] in target_ext:
-                        if count < 5:
-                            f_node = os.path.splitext(f)[0]
-                            edges.add(f"    {parent_dir} -.-> {f_node}")
-                            count += 1
-                        
-            # Ensure at least minimal structure
-            if not edges:
-                edges.add("    Root --> src")
-                edges.add("    src --> App")
+                parent = os.path.basename(root) if root != path else "Root"
+                for d in dirs: edges.add(f"    {parent} --> {d}[/{d}/]")
+                for i, f in enumerate(files):
+                    if i < 5 and os.path.splitext(f)[1] in target_ext:
+                        edges.add(f"    {parent} -.-> {os.path.splitext(f)[0]}")
 
-        # Build Mermaid
-        graph = "graph TD\n"
-        graph += "    subgraph System Architecture\n"
-        graph += "\n".join(list(edges)[:40]) # Limit to 40 edges
-        graph += "\n    end"
-        
-        return graph
+        if not edges:
+            edges.add("    Root --> src")
 
-    async def _agent_docs_engineer(self, path: str, api_key: str) -> str:
-        """
-        Generates a High-Quality README.
-        """
+        return "graph TD\n    subgraph Architecture\n" + "\n".join(list(edges)[:50]) + "\n    end"
+
+# --- Component 4: Docs Generator (LLM) ---
+class DocsGenerator:
+    async def generate_readme(self, path: str, api_key: str) -> str:
         if not api_key: return "# README\n\nGenerated without API Key."
         
-        # Read Structure + package.json/requirements.txt
         structure = ""
         deps = ""
         for root, dirs, files in os.walk(path):
             if '.git' in root or 'node_modules' in root: continue
             level = root.replace(path, '').count(os.sep)
-            indent = ' ' * 4 * (level)
+            if level > 2: continue # Limit depth
+            indent = ' ' * 4 * level
             structure += f"{indent}{os.path.basename(root)}/\n"
-            subindent = ' ' * 4 * (level + 1)
             for f in files:
-                structure += f"{subindent}{f}\n"
-                if f in ['package.json', 'requirements.txt']:
+                structure += f"{indent}    {f}\n"
+                if f in ['package.json', 'requirements.txt', 'pom.xml']:
                     try:
-                        with open(os.path.join(root, f), 'r') as df: deps += df.read() + "\n"
+                        with open(os.path.join(root, f), 'r') as df: deps += df.read()[:500] + "\n"
                     except: pass
-            if len(structure) > 2000: break # Token limit
+            if len(structure) > 1500: break
 
         chat = ChatGroq(temperature=0.2, groq_api_key=api_key, model_name="llama-3.3-70b-versatile")
-        
         prompt = f"""
-        You are a Senior Developer. Write a professional README.md for this project.
+        Act as a Principal Software Engineer. Write a README.md for this codebase.
         
-        Files:
+        File Structure:
         {structure}
         
         Dependencies:
-        {deps[:1000]}
+        {deps}
         
-        Include:
-        1. 🚀 Project Title & One-line Description (Infer from file names/deps)
-        2. 🛠 Tech Stack (Badges)
-        3. ✨ Key Features (Infer from file names like 'auth', 'cart', 'payment')
-        4. 📦 Installation Guide
+        Sections required:
+        1. Title & Description
+        2. Tech Stack (Badges)
+        3. Key Features
+        4. Setup/Run Instructions
         """
-        
-        res = await chat.ainvoke(prompt)
-        return res.content
+        try:
+             res = await chat.ainvoke(prompt)
+             return res.content
+        except Exception as e:
+             logger.error(f"LLM generation failed: {e}")
+             return "# API Error\nFailed to generate README."
 
-    def _agent_api_scanner(self, path: str) -> Dict[str, Any]:
+    async def generate_openapi_spec(self, path: str, framework: str, api_key: str) -> Optional[str]:
         """
-        Scans for Backend Routes using Framework-Aware Static Analysis.
-        1. Detects Framework (package.json, requirements.txt, pom.xml).
-        2. Applies specific extraction rules.
+        Bootstrap an OpenAPI spec using LLM if none exists.
         """
-        import re
+        if not api_key: return None
         
-        framework = "Unknown"
-        routes = []
+        # 1. Scout for Router Files
+        candidates = []
+        ignored_dirs = {'node_modules', 'venv', 'dist', 'build', '.git', '__pycache__', 'test', 'tests'}
         
-        # 1. Framework Detection
-        # Check Node.js
-        package_json_path = os.path.join(path, "package.json")
-        if os.path.exists(package_json_path):
-            try:
-                with open(package_json_path, 'r', encoding='utf-8') as f:
-                    content = f.read().lower()
-                    if '"express"' in content: framework = "Express.js"
-                    elif '"nest"' in content: framework = "NestJS"
-                    elif '"fastify"' in content: framework = "Fastify"
-            except: pass
-
-        # Check Python
-        req_txt_path = os.path.join(path, "requirements.txt")
-        if os.path.exists(req_txt_path):
-            try:
-                with open(req_txt_path, 'r', encoding='utf-8') as f:
-                    content = f.read().lower()
-                    if "fastapi" in content: framework = "FastAPI"
-                    elif "flask" in content: framework = "Flask"
-                    elif "django" in content: framework = "Django"
-            except: pass
-            
-        # Check Java (Spring Boot)
-        pom_path = os.path.join(path, "pom.xml")
-        gradle_path = os.path.join(path, "build.gradle")
-        if os.path.exists(pom_path) or os.path.exists(gradle_path):
-            framework = "Spring Boot"
-
-        if framework == "Unknown":
-            logger.warning("No known API framework detected. Skipping endpoint scan.")
-            return {"framework": "Unknown", "routes": []}
-
-        # 2. Targeted Extraction Rules
-        ignored_dirs = {'node_modules', 'venv', 'dist', 'build', '.git', 'test', 'tests', '__pycache__', 'target'}
-
-        # Regex Definitions
-        py_fastapi_pattern = re.compile(r"""@(?:router|app|api_router)\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]""")
-        js_express_pattern = re.compile(r"""(?:router|app)\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]""")
-        
-        # Spring Boot Patterns
-        # Class level: @RequestMapping("/api/v1") or @RequestMapping(value = "/api/v1") matches before "class"
-        java_class_req_pattern = re.compile(r"""@RequestMapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?["']([^"']+)["']""")
-        # Method level: @GetMapping("/users")
-        java_method_pattern = re.compile(r"""@(Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?["']([^"']+)["']""")
+        # Heuristics
+        patterns = []
+        if framework == "FastAPI":
+            patterns = ["APIRouter", "FastAPI(", "@app.", "@router."]
+        elif framework in ["Express.js", "NestJS", "Fastify"]:
+            patterns = [".get(", ".post(", "Router(", "@Controller", "@Get"]
+        elif framework == "Spring Boot":
+            patterns = ["@RestController", "@RequestMapping", "@GetMapping"]
+        else:
+            # Generic fallback
+            patterns = ["api", "route", "endpoint", "http"]
 
         for root, dirs, files in os.walk(path):
             dirs[:] = [d for d in dirs if d not in ignored_dirs]
-            
             for file in files:
                 ext = os.path.splitext(file)[1]
+                if ext not in ['.py', '.js', '.ts', '.java', '.go', '.cs']: continue
                 
                 try:
-                    # PYTHON SCANNERS
-                    if ext == '.py':
-                        if framework == "FastAPI":
-                            try:
-                                import ast
-                                with open(os.path.join(root, file), 'r', encoding='utf-8', errors='ignore') as f:
-                                    file_content = f.read()
-                                    tree = ast.parse(file_content)
-                                    
-                                    # 1. Find Prefixes
-                                    prefixes = {}
-                                    for node in ast.walk(tree):
-                                        if isinstance(node, ast.Assign):
-                                            for target in node.targets:
-                                                if isinstance(target, ast.Name):
-                                                    var_name = target.id
-                                                    if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
-                                                        if node.value.func.id == "APIRouter":
-                                                            for keyword in node.value.keywords:
-                                                                if keyword.arg == "prefix" and isinstance(keyword.value, ast.Constant):
-                                                                    prefixes[var_name] = keyword.value.value
+                    fpath = os.path.join(root, file)
+                    with open(fpath, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                        # If file contains framework keywords
+                        if any(p in content for p in patterns):
+                            # Limit file size context
+                            candidates.append(f"--- File: {file} ---\n{content[:3000]}\n")
+                            if len(candidates) >= 10: break # Token safety
+                except: pass
+            if len(candidates) >= 10: break
 
-                                    # 2. Find Routes
-                                    for node in ast.walk(tree):
-                                        if isinstance(node, ast.FunctionDef):
-                                            for decorator in node.decorator_list:
-                                                if isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute):
-                                                    method_name = decorator.func.attr
-                                                    if method_name in ['get', 'post', 'put', 'delete', 'patch']:
-                                                        # Resolve router variable
-                                                        router_var = None
-                                                        if isinstance(decorator.func.value, ast.Name):
-                                                            router_var = decorator.func.value.id
-                                                        
-                                                        # Resolve Path
-                                                        path = None
-                                                        if decorator.args and isinstance(decorator.args[0], ast.Constant):
-                                                            path = decorator.args[0].value
-                                                        
-                                                        if path is not None:
-                                                            prefix = prefixes.get(router_var, "")
-                                                            full_path = f"{prefix}{path}".replace("//", "/")
-                                                            routes.append({"method": method_name.upper(), "url": full_path, "file": file})
-                            except Exception:
-                                pass # Fallback or skip file on parse error
+        if not candidates: 
+            return None
 
-                    # JS SCANNERS
-                    elif ext in ['.js', '.ts', '.jsx', '.tsx']:
-                        if framework == "Express.js":
-                             with open(os.path.join(root, file), 'r', encoding='utf-8', errors='ignore') as f:
-                                content = f.read()
-                                # Improved Regex to catch variable router names
-                                # matches: app.get('/path'), router.post('/path'), v1Router.put('/path')
-                                matches = re.findall(r"""(?:\w+)\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]""", content)
-                                for method, url in matches:
-                                    routes.append({"method": method.upper(), "url": url, "file": file})
+        # 2. LLM Gen
+        chat = ChatGroq(temperature=0.1, groq_api_key=api_key, model_name="llama-3.3-70b-versatile")
+        
+        context = "\n".join(candidates)
+        prompt = f"""
+        You are an API Architect. Generate a valid OpenAPI 3.0 JSON specification for the following code snippets.
+        
+        Rules:
+        1. Output ONLY valid JSON. 
+        2. Do NOT output markdown key `json`.
+        3. Do NOT output any conversational text.
+        4. Start immediately with {{ and end with }}.
+        
+        Codebase:
+        {context}
+        """
+        
+        try:
+            res = await chat.ainvoke(prompt)
+            content = res.content.strip()
+            
+            # Robust JSON Extraction
+            start_idx = content.find('{')
+            end_idx = content.rfind('}')
+            
+            if start_idx != -1 and end_idx != -1:
+                content = content[start_idx : end_idx + 1]
+            
+            # Validation parse
+            json.loads(content) 
+            return content
+        except Exception as e:
+            logger.error(f"AI OpenAPI Gen failed: {e}")
+            logger.error(f"Raw Content: {res.content[:500] if 'res' in locals() else 'No response'}")
+            return None
 
-                    # JAVA SCANNERS
-                    elif ext == '.java':
-                         if framework == "Spring Boot":
-                            with open(os.path.join(root, file), 'r', encoding='utf-8', errors='ignore') as f:
-                                content = f.read()
-                                # 1. Check if Controller
-                                if "@RestController" in content or "@Controller" in content:
-                                    base_path = ""
-                                    # 2. Extract Class Level Mapping (Look before "class" keyword)
-                                    class_idx = content.find("class ")
-                                    if class_idx != -1:
-                                        pre_class = content[:class_idx]
-                                        # Find last occurrence of RequestMapping before class? Or just one. 
-                                        # Usually there's only one relevant one on the class.
-                                        base_match = java_class_req_pattern.search(pre_class)
-                                        if base_match:
-                                            base_path = base_match.group(1)
-                                    
-                                    # 3. Extract Method Level Mappings
-                                    matches = java_method_pattern.findall(content)
-                                    for method_type, url in matches: # method_type will be Get, Post etc
-                                        # Combine paths: /base + /method -> /base/method (handle slashes)
-                                        # Ensure no double slash unless intentional, but generally clean up
-                                        full_url = f"{base_path}/{url}".replace("//", "/")
-                                        if not full_url.startswith("/"): full_url = "/" + full_url
-                                        
-                                        http_method = method_type.upper() 
-                                        routes.append({"method": http_method, "url": full_url, "file": file})
+# --- Main Facade ---
+class ProjectIntelligenceService:
+    def __init__(self):
+        self.loader = RepoLoader()
+        self.api_service = ApiContractService()
+        self.arch_mapper = ArchitectureMapper()
+        self.docs_gen = DocsGenerator()
 
-                except Exception:
-                    pass
-                    
-        # Deduplicate
-        unique_routes = []
-        seen = set()
-        for r in routes:
-            key = f"{r['method']}:{r['url']}"
-            if key not in seen:
-                seen.add(key)
-                unique_routes.append(r)
+    async def analyze_project_structure(self, repo_url: str, api_key: str) -> Dict[str, Any]:
+        """ Step 1: Clone & Map """
+        repo_path = self.loader.clone_repo(repo_url)
+        graph = self.arch_mapper.map_architecture(repo_path)
+        job_id = os.path.basename(repo_path)
+        return {"job_id": job_id, "graph_data": graph, "repo_path_id": job_id}
 
-        return {"framework": framework, "routes": unique_routes[:50]}
+    async def generate_docs(self, job_id: str, api_key: str) -> Dict[str, Any]:
+        """ Step 2: Docs & API Specs """
+        repo_path = os.path.join(self.loader.base_dir, job_id)
+        if not os.path.exists(repo_path):
+             return {"error": "Session expired"}
+
+        readme = await self.docs_gen.generate_readme(repo_path, api_key)
+        framework = self.api_service.detect_framework(repo_path)
+        
+        # 1. Try Standard Discovery (OpenAPI First)
+        api_data = self.api_service.get_api_specs(repo_path)
+        
+        specs = []
+        warnings = []
+        if "error" in api_data:
+             warnings.append(api_data["error"])
+        else:
+             specs = api_data.get("routes", [])
+
+        # Clean up
+        self.loader.cleanup(repo_path)
+
+        return {
+            "readme": readme,
+            "api_specs": specs,
+            "detected_framework": framework, 
+            "warnings": warnings,
+            "ai_generated_spec": False
+        }
+
+    async def generate_ai_openapi_for_repo(self, repo_url: str, api_key: str) -> Dict[str, Any]:
+        """
+        Standalone method to generate OpenAPI spec for a repo URL.
+        """
+        repo_path = self.loader.clone_repo(repo_url)
+        try:
+            framework = self.api_service.detect_framework(repo_path)
+            ai_spec = await self.docs_gen.generate_openapi_spec(repo_path, framework, api_key)
+            
+            routes = []
+            if ai_spec:
+                 try:
+                     spec = json.loads(ai_spec)
+                     parsed = self.api_service._parse_openapi(spec, "generated_openapi.json")
+                     routes = parsed.get("routes", [])
+                 except: pass
+            
+            return {
+                "spec_json": ai_spec,
+                "routes": routes,
+                "framework": framework
+            }
+        finally:
+            self.loader.cleanup(repo_path)
 
 project_intelligence_service = ProjectIntelligenceService()

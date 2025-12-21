@@ -5,20 +5,17 @@ from app.api.v1.endpoints.dashboard import get_user_stats
 from app.core.database import get_db
 from app.services.ai_roadmap import ai_service
 from datetime import datetime
+from app.api.v1 import deps
 
 router = APIRouter()
 
 @router.get("/latest")
 async def get_latest_roadmap(
-    db: Any = Depends(get_db)
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     print("DEBUG: Endpoint /latest hit. Fetching from DB.")
-    # ... existing latest logic ...
-    user_stat = db.user_stats.find_one(sort=[("_id", -1)])
-    if not user_stat:
-         user_id = "demo_user"
-    else:
-        user_id = user_stat["user_id"]
+    user_id = str(current_user["_id"])
         
     latest = db.roadmaps.find_one(
         {"user_id": user_id},
@@ -36,14 +33,13 @@ async def get_latest_roadmap(
 
 @router.get("/")
 async def get_all_roadmaps(
-    db: Any = Depends(get_db)
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     """
     List all roadmaps for the current user.
     """
-    # 0. Get User (Mock)
-    user_stat = db.user_stats.find_one(sort=[("_id", -1)])
-    user_id = user_stat["user_id"] if user_stat else "demo_user"
+    user_id = str(current_user["_id"])
     
     cursor = db.roadmaps.find({"user_id": user_id}).sort("created_at", -1)
     roadmaps = []
@@ -117,7 +113,8 @@ async def generate_roadmap(
     request: Request,
     body: dict = Body(...),
     x_groq_api_key: str | None = Header(default=None, alias="x-groq-api-key"),
-    db: Any = Depends(get_db)
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     print("DEBUG: All Headers:", request.headers)
     
@@ -135,14 +132,8 @@ async def generate_roadmap(
         weak_patterns = body.get("weak_patterns", [])
         force_regenerate = body.get("force_regenerate", False)
         
-        # 0. Get User (Mock for now, using last created user)
-        # real app: current_user.id
-        user_stat = db.user_stats.find_one(sort=[("_id", -1)])
-        if not user_stat:
-             # Fallback for dev if no user exists yet
-             user_id = "demo_user"
-        else:
-            user_id = user_stat["user_id"]
+        # 0. Get User
+        user_id = str(current_user["_id"])
 
         print(f"DEBUG: Endpoint /generate hit. Params: role={target_role}, force={force_regenerate}")
         print(f"DEBUG: x_groq_api_key received: {'YES' if x_groq_api_key else 'NO'} (Value: {x_groq_api_key[:5] + '...' if x_groq_api_key else 'None'})")
@@ -195,16 +186,15 @@ async def generate_roadmap(
 
 @router.delete("/cleanup")
 async def cleanup_non_bookmarked(
-    db: Any = Depends(get_db)
+    db: Any = Depends(get_db),
+    current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     """
     Delete all roadmaps for user that are NOT bookmarked.
     Called on SignOut.
     """
     # 0. Get User
-    user_stat = db.user_stats.find_one(sort=[("_id", -1)])
-    if not user_stat: return {"count": 0}
-    user_id = user_stat["user_id"]
+    user_id = str(current_user["_id"])
     
     # Delete where is_bookmarked is not true
     result = db.roadmaps.delete_many({
