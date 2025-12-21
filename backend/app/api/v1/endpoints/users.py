@@ -12,8 +12,10 @@ async def read_user_me(
     """
     Get current user profile.
     """
+    print(f"Me Endpoint called for: {current_user.get('_id')}")
     return {
-        "username": current_user.get("full_name", "User"),
+        "id": str(current_user["_id"]),
+        "username": current_user.get("full_name") or current_user.get("email").split("@")[0],
         "email": current_user.get("email"),
         "target_role": current_user.get("target_role", "Backend"),
         "joined_at": str(current_user.get("_id").generation_time.date())
