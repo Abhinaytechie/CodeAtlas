@@ -3,6 +3,10 @@ import logging
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
 from typing import Optional
+try:
+    from ddgs import DDGS
+except ImportError:
+    from duckduckgo_search import DDGS
 
 logger = logging.getLogger(__name__)
 
@@ -57,16 +61,41 @@ class AIRoadmapService:
         - REALISTIC: Targeted at Indian on-campus/off-campus placements.
         - STRUCTURE: Divide into 3 Levels: Beginner, Intermediate, Advanced.
         - TRACKS: Each level must have parallel tracks: DSA, Core Skills, Projects, Interview Signals.
-        - SKILLS: Each skill MUST have a unique 'id' (kebab-case slug) and 'resources' (best free links).
+        - SKILLS: Each skill MUST have a unique 'id' (kebab-case slug) and 'resources' (best free resources links).
         - CONTENT: Practical, recruiter-aligned expectations. No motivational fluff.
         
         CRITICAL RESOURCE RULES:
         1. ONLY use stable, high-authority links (Official Docs, MDN, Python.org, React.dev).
         2. For DSA: Use NeetCode.io, Striver (TakeUForward), or LeetCode specific problem links.
         3. For Courses: Use Coursera, Udemy, or freeCodeCamp.
-        4. YOUTUBE PLAYLISTS: MUST include high-quality playlists from TOP educators (e.g., Hitesh Choudhary, Striver, Krish Naik,Telsko,Codebasics,ApnaCollege Corey Schafer, Hussein Nasser).
-        5. DO NOT use generic blogs (Medium, Dev.to) unless absolutely necessary.
+        4. YOUTUBE PLAYLISTS: MUST include high-quality playlists.
+        5. **TRICK FOR YOUTUBE**: Do NOT guess the URL. Set 'url' to "SEARCH: <Channel Name> <Topic> Playlist".
+           Example: "SEARCH: Striver Graph Series Playlist" or "SEARCH: Hitesh Choudhary JavaScript Playlist".
         6. DO NOT use placeholders like "example.com" or "youtube.com/...".
+        7. Blogs ARE allowed (Medium, personal blogs, etc.) ONLY IF:
+           - The content is widely referenced
+           - The link is stable and publicly accessible
+        
+        8. AUTHORITATIVE YOUTUBE CREATOR MAPPING (Use these matching creators found in SEARCH):
+           - Java / OOP / Spring Boot -> Telusko, Java Brains, in28Minutes
+           - Data Structures & Algorithms -> Striver (Take U Forward), NeetCode, Abdul Bari
+           - JavaScript / Frontend -> Hitesh Choudhary, Akshay Saini, Traversy Media
+           - React -> React.dev (official), Codevolution, Hitesh Choudhary
+           - Backend / Node.js -> Piyush Garg, Traversy Media
+           - Machine Learning / Data Science -> Krish Naik, codebasics, freeCodeCamp
+           - System Design -> Gaurav Sen, Tech Dummies
+           - Databases / SQL -> freeCodeCamp, Telusko
+
+        9. CORE SKILLS RULE:
+           - For 'Core Skills' track, you MUST use a YouTube Playlist from the AUTHORITATIVE MAPPING above.
+
+        PROJECTS TRACK RULES (CRITICAL):
+        - Every Project MUST have exactly 2 resources:
+          1. A YouTube Playlist: Use "SEARCH: Build <Project Name> <Tech Stack> Playlist" (prefer mapped creators).
+          2. A Real Project Link (GitHub): Use "GITHUB: <Project Name> <Tech Stack> implementation".
+             - Example: "GITHUB: E-commerce app MERN stack implementation"
+             - This allows the system to find REAL user repositories.
+        - STRICTLY FORBIDDEN: Do NOT link to official documentation (like React docs) for projects.
 
         JSON Structure:
         {{
@@ -87,8 +116,8 @@ class AIRoadmapService:
                                     "description": "Two Pointers, Sliding Window basics.",
                                     "status": "Not Started",
                                     "resources": [
-                                        {{ "title": "NeetCode Arrays", "url": "https://youtu.be/..." }},
-                                        {{ "title": "GFG Article", "url": "https://geeksforgeeks.org/..." }}
+                                        {{ "title": "NeetCode Arrays", "url": "https://neetcode.io/roadmap" }},
+                                        {{ "title": "Striver Graph Series", "url": "SEARCH: Striver Graph Series Playlist" }}
                                     ]
                                 }}
                             ]
@@ -115,17 +144,13 @@ class AIRoadmapService:
         
         chain = prompt | llm
         
-        # We don't need 'days' or 'weak_patterns' strictly anymore, but we can pass them if needed.
-        # For now, let's keep the call simple.
         response = await chain.ainvoke({
             "role": role
         })
         
-        # Clean response content (sometimes LLM wraps in ```json ... ```)
         content = response.content.strip()
         print(f"DEBUG: Raw LLM Response: {content[:500]}...")
         
-        # Robust JSON Extraction
         import re
         data = None
         try:
@@ -137,24 +162,129 @@ class AIRoadmapService:
             else:
                 raise ValueError("No JSON found in response")
         except json.JSONDecodeError:
-            # Fallback: Try to clean markdown tags if regex failed (unlikely for well-formed JSON)
              if content.startswith("```json"):
                 content = content[7:]
              if content.endswith("```"):
                 content = content[:-3]
              data = json.loads(content)
              
-        # ENFORCE IDs: Post-process to ensure every skill has an ID
+        # ENFORCE IDs
         if data and "levels" in data:
+            data = await self._enrich_resources(data) # Changed name to generic enrichment
             for level in data["levels"]:
                 for track in level.get("tracks", []):
                     for skill in track.get("skills", []):
                         if "id" not in skill or not skill["id"]:
-                            # Generate simple slug from name
                             slug = skill.get("name", "unknown").lower().replace(" & ", "-").replace(" ", "-")
                             skill["id"] = slug
                             
         return data
+
+    async def _enrich_resources(self, data):
+        """
+        Scans the roadmap for 'SEARCH:' (YouTube) and 'GITHUB:' (DuckDuckGo) URLs and resolves them.
+        """
+        import asyncio
+        logger.info("Starting Resource Enrichment...")
+        
+        try:
+            for level in data.get("levels", []):
+                for track in level.get("tracks", []):
+                    for skill in track.get("skills", []):
+                        for resource in skill.get("resources", []):
+                            url = resource.get("url", "")
+                            
+                            # 1. YouTube Handler
+                            if url.startswith("SEARCH:"):
+                                query = url.replace("SEARCH:", "").strip()
+                                print(f"DEBUG: Resolving YouTube: {query}")
+                                try:
+                                    # Use DDGS for Video Search (Replacing broken youtube-search-python)
+                                    loop = asyncio.get_event_loop()
+                                    def _yt_search():
+                                        with DDGS() as ddgs:
+                                            # Search for videos
+                                            results = list(ddgs.videos(query, max_results=1))
+                                            return results
+                                    
+                                    results = await loop.run_in_executor(None, _yt_search)
+                                    
+                                    if results:
+                                        # DDGS video result usually has 'content' as URL or 'json' data
+                                        # Looking at the test output, it seems to return a dict with 'content' as the link
+                                        video_link = results[0].get('content') 
+                                        if not video_link:
+                                             video_link = results[0].get('embed_url') # Fallback
+                                        
+                                        if video_link:
+                                            resource['url'] = video_link
+                                            print(f"DEBUG: Resolved to {video_link}")
+                                        else:
+                                            resource['url'] = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
+                                    else:
+                                        resource['url'] = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
+                                        
+                                except Exception as e:
+                                    print(f"YouTube Error: {e}")
+                                    resource['url'] = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
+                                    
+                            # 2. GitHub Handler
+                            elif url.startswith("GITHUB:"):
+                                query = url.replace("GITHUB:", "").strip()
+                                print(f"DEBUG: Resolving GitHub: {query}")
+                                try:
+                                    # Run DDGS in executor to avoid blocking loop
+                                    loop = asyncio.get_event_loop()
+                                    def _gh_search():
+                                        # Search filtering for github.com
+                                        with DDGS() as ddgs:
+                                            # site:github.com "query"
+                                            # We try to get top 2 results and pick the best non-official-looking one if possible,
+                                            # or just the top result.
+                                            results = list(ddgs.text(f"site:github.com {query}", max_results=1))
+                                            return results
+                                    
+                                    results = await loop.run_in_executor(None, _gh_search)
+                                    if results:
+                                        found_url = results[0]['href']
+                                        resource['url'] = found_url
+                                        print(f"DEBUG: GitHub Resolved: {found_url}")
+                                    else:
+                                        # Fallback to general search
+                                        resource['url'] = f"https://github.com/search?q={query.replace(' ', '+')}"
+                                        
+                                except Exception as e:
+                                    print(f"GitHub Search Error: {e}")
+                                    resource['url'] = f"https://github.com/search?q={query.replace(' ', '+')}"
+
+                            # 3. Validation & Sanitization (Final Pass)
+                            resource['url'] = self._sanitize_url(resource['url'])
+
+            return data
+        except Exception as e:
+            logger.error(f"Enrichment Error: {e}")
+            return data
+
+    def _sanitize_url(self, url: str) -> str:
+        """
+        Ensures strict HTTP/HTTPS formatting to preventing local file access behavior.
+        """
+        if not url:
+            return "#"
+        
+        # If LLM returns "SEARCH:..." that failed to resolve, force it to a Google Search
+        if url.startswith("SEARCH:") or url.startswith("GITHUB:"):
+             query = url.replace("SEARCH:", "").replace("GITHUB:", "").strip()
+             return f"https://www.google.com/search?q={query.replace(' ', '+')}"
+
+        # If LLM returned a local path or generic placeholder
+        if url.lower().startswith("file:") or url.lower().startswith("d:") or url.lower().startswith("c:"):
+             return "https://www.google.com/search?q=roadmap+resource"
+             
+        if not url.startswith("http"):
+            return f"https://{url}"
+            
+        return url
 
     def _get_simulated_response(self, role, weak_patterns):
         """

@@ -1,0 +1,22 @@
+Traceback (most recent call last):
+  File "D:\Roadmapguide\backend\app\services\ai_roadmap.py", line 23, in generate_roadmap
+    return await self._generate_real_ai(role, days, weak_patterns, api_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Roadmapguide\backend\app\services\ai_roadmap.py", line 200, in _generate_real_ai
+    response = await chain.ainvoke({
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Roadmapguide\backend\venv\Lib\site-packages\langchain_core\runnables\base.py", line 3183, in ainvoke
+    input_ = await coro_with_context(part(), context, create_task=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Roadmapguide\backend\venv\Lib\site-packages\langchain_core\prompts\base.py", line 243, in ainvoke
+    return await self._acall_with_config(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Roadmapguide\backend\venv\Lib\site-packages\langchain_core\runnables\base.py", line 2109, in _acall_with_config
+    output: Output = await coro_with_context(coro, context)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Roadmapguide\backend\venv\Lib\site-packages\langchain_core\prompts\base.py", line 196, in _aformat_prompt_with_error_handling
+    inner_input_ = self._validate_input(inner_input)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Roadmapguide\backend\venv\Lib\site-packages\langchain_core\prompts\base.py", line 184, in _validate_input
+    raise KeyError(
+KeyError: 'Input to PromptTemplate is missing variables {\'\\n  "title"\'}.  Expected: [\'\\n  "title"\', \'role\'] Received: [\'role\']\nNote: if you intended {\n  "title"} to be part of the string and not a variable, please escape it with double curly braces like: \'{{\n  "title"}}\'.\nFor troubleshooting, visit: https://docs.langchain.com/oss/python/langchain/errors/INVALID_PROMPT_INPUT '
